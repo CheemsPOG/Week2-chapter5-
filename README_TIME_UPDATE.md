@@ -325,13 +325,15 @@ Output: "Raw input: [12abc45]" (có ký tự lạ từ lần trước)
 ### 📺 LCD Error Display cho Bài 1:
 
 **Khi timeout (mỗi lần):**
+
 ```
 LCD Line 1: "TIMEOUT 1/3!"     (màu đỏ)
 LCD Line 2: "Please enter input..."  (màu vàng)
 ```
 
 **Khi 3 lần timeout (final error):**
-```  
+
+```
 LCD Line 1: "ERROR: 3x TIMEOUT!"     (màu đỏ, size 16)
 LCD Line 2: "No input received"      (màu trắng)
 LCD Line 3: "Returning to clock..."  (màu vàng)
@@ -339,6 +341,7 @@ LCD Line 4: "Failed at: Hours step"  (màu cyan, tùy step)
 ```
 
 **Các step có thể fail:**
+
 - "Failed at: Hours step"
-- "Failed at: Minutes step"  
+- "Failed at: Minutes step"
 - "Failed at: Seconds step"
