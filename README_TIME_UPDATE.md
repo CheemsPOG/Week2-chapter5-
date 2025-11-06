@@ -298,7 +298,9 @@ Output: "Raw input: [12abc45]" (có ký tự lạ từ lần trước)
 ### 🔧 Cập nhật mới:
 
 - **✅ FIX INPUT BUFFER**: Xóa dữ liệu cũ khi bắt đầu, tránh concat chuỗi lạ
-- **Bài 1 (Button 13)**: Thêm validation và error handling
+- **✅ TIMEOUT CHO BÀI 1**: Thêm timeout 10s + LCD error display
+- **✅ LCD ERROR MESSAGES**: Hiển thị chi tiết lỗi timeout trên LCD
+- **Bài 1 (Button 13)**: Timeout + validation + LCD error display
 - **Bài 2 (Button 14)**: Timer 10s reset đúng cách, validation chi tiết
 - **Cả hai bài**: Thông báo lỗi rõ ràng khi nhập sai format hoặc khoảng giá trị
 
@@ -319,3 +321,24 @@ Output: "Raw input: [12abc45]" (có ký tự lạ từ lần trước)
 00:23s - (Không response) → TIMEOUT → "Minutes" (timer reset về 0)
 00:31s - (Không response) → ERROR: 3 retries → Quit
 ```
+
+### 📺 LCD Error Display cho Bài 1:
+
+**Khi timeout (mỗi lần):**
+```
+LCD Line 1: "TIMEOUT 1/3!"     (màu đỏ)
+LCD Line 2: "Please enter input..."  (màu vàng)
+```
+
+**Khi 3 lần timeout (final error):**
+```  
+LCD Line 1: "ERROR: 3x TIMEOUT!"     (màu đỏ, size 16)
+LCD Line 2: "No input received"      (màu trắng)
+LCD Line 3: "Returning to clock..."  (màu vàng)
+LCD Line 4: "Failed at: Hours step"  (màu cyan, tùy step)
+```
+
+**Các step có thể fail:**
+- "Failed at: Hours step"
+- "Failed at: Minutes step"  
+- "Failed at: Seconds step"

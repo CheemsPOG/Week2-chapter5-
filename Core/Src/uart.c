@@ -301,19 +301,48 @@ void uart_ProcessTimeUpdate(void)
     {
         retry_count++;
 
-        // Hiển thị thông báo timeout
+        // Hiển thị thông báo timeout trên cả UART và LCD
         char timeout_msg[50];
         sprintf(timeout_msg, "Timeout! Please enter input (%d/3)", retry_count);
         uart_Rs232SendString((uint8_t *)timeout_msg);
         uart_Rs232SendString((uint8_t *)"\n");
 
+        // Hiển thị timeout warning trên LCD
+        char lcd_timeout_msg[30];
+        sprintf(lcd_timeout_msg, "TIMEOUT %d/3!", retry_count);
+        lcd_ShowStr(10, 160, lcd_timeout_msg, RED, BLACK, 14, 0);
+        lcd_ShowStr(10, 180, "Please enter input...", YELLOW, BLACK, 12, 0);
+
         if (retry_count >= MAX_RETRY_COUNT)
         {
-            // Quá 3 lần, quay về chế độ bình thường
-            uart_Rs232SendString((uint8_t *)"Timeout exceeded! Returning to normal mode...\n");
-            lcd_ShowStr(10, 160, "Timeout! Back to clock", RED, BLACK, 14, 0);
+            // Quá 3 lần, hiển thị lỗi chi tiết trên LCD và UART
+            uart_Rs232SendString((uint8_t *)"ERROR: Timeout exceeded! Returning to normal mode...\n");
 
-            HAL_Delay(2000);
+            // Hiển thị lỗi trên LCD với nhiều dòng thông tin
+            lcd_ShowStr(10, 160, "ERROR: 3x TIMEOUT!", RED, BLACK, 16, 0);
+            lcd_ShowStr(10, 180, "No input received", WHITE, BLACK, 14, 0);
+            lcd_ShowStr(10, 200, "Returning to clock...", YELLOW, BLACK, 12, 0);
+
+            // Hiển thị thông tin trạng thái lỗi
+            char error_step[30];
+            switch (time_update_state)
+            {
+            case TIME_UPDATE_HOURS:
+                sprintf(error_step, "Failed at: Hours step");
+                break;
+            case TIME_UPDATE_MINUTES:
+                sprintf(error_step, "Failed at: Minutes step");
+                break;
+            case TIME_UPDATE_SECONDS:
+                sprintf(error_step, "Failed at: Seconds step");
+                break;
+            default:
+                sprintf(error_step, "Failed at: Unknown step");
+                break;
+            }
+            lcd_ShowStr(10, 220, error_step, CYAN, BLACK, 12, 0);
+
+            HAL_Delay(3000); // Tăng thời gian hiển thị để đọc được lỗi
             time_update_state = TIME_UPDATE_IDLE;
             retry_count = 0;
             return;
@@ -387,7 +416,9 @@ void uart_ProcessTimeUpdate(void)
             request_start_time = HAL_GetTick(); // Reset timer cho bước tiếp theo
             lcd_ShowStr(10, 120, "Updating minutes...", WHITE, BLACK, 16, 0);
             lcd_ShowStr(10, 140, "Enter minute (0-59):", YELLOW, BLACK, 14, 0);
-            lcd_ShowStr(10, 160, "                        ", BLACK, BLACK, 14, 0); // Clear timeout msg
+            // Clear timeout messages
+            lcd_ShowStr(10, 160, "                        ", BLACK, BLACK, 14, 0);
+            lcd_ShowStr(10, 180, "                        ", BLACK, BLACK, 12, 0);
             uart_Rs232SendString((uint8_t *)"Minutes\n");
             break;
 
@@ -398,7 +429,9 @@ void uart_ProcessTimeUpdate(void)
             request_start_time = HAL_GetTick(); // Reset timer cho bước tiếp theo
             lcd_ShowStr(10, 120, "Updating seconds...", WHITE, BLACK, 16, 0);
             lcd_ShowStr(10, 140, "Enter second (0-59):", YELLOW, BLACK, 14, 0);
-            lcd_ShowStr(10, 160, "                        ", BLACK, BLACK, 14, 0); // Clear timeout msg
+            // Clear timeout messages
+            lcd_ShowStr(10, 160, "                        ", BLACK, BLACK, 14, 0);
+            lcd_ShowStr(10, 180, "                        ", BLACK, BLACK, 12, 0);
             uart_Rs232SendString((uint8_t *)"Seconds\n");
             break;
 
