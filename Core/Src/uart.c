@@ -85,6 +85,14 @@ static uint8_t line_ready = 0;
 // Function to reset static variables
 void uart_ResetLineBuffer(void)
 {
+    // DEBUG: Check if buffer had old data
+    if (line_index > 0 || line_buffer[0] != 0)
+    {
+        char old_debug[50];
+        sprintf(old_debug, "DEBUG: Clearing old buffer: [%s] idx=%d\n", line_buffer, line_index);
+        uart_Rs232SendString((uint8_t *)old_debug);
+    }
+
     line_index = 0;
     line_ready = 0;
     memset(line_buffer, 0, sizeof(line_buffer));
@@ -129,9 +137,9 @@ int uart_ReadLine(uint8_t *buffer, uint8_t max_len)
                 return 1; // Trả về ngay lập tức
             }
         }
-        else if (byte >= '0' && byte <= '9')
+        else if (byte >= 0x20 && byte <= 0x7E) // Accept all printable ASCII characters
         {
-            // FIX: Chỉ nhận ký tự số và kiểm tra overflow
+            // Accept all printable characters, let validation handle correctness
             if (line_index < sizeof(line_buffer) - 1)
             {
                 line_buffer[line_index++] = byte;
@@ -144,24 +152,28 @@ int uart_ReadLine(uint8_t *buffer, uint8_t max_len)
                 line_buffer[line_index++] = byte;
             }
         }
-        else
-        {
-            // FIX: Ký tự không hợp lệ, reset buffer để tránh concat garbage
-            line_index = 0;
-            memset(line_buffer, 0, sizeof(line_buffer));
-        }
+        // Note: Non-printable characters (except \n, \r) are ignored (continue in while loop)
     }
 
     return 0; // Chưa đọc đủ một dòng
 }
 
 // ---------------------- Validation dữ liệu đầu vào cho Bài 2 ----------------------
-uint8_t uart_ValidateInput(uint8_t *str, TimeUpdateState_t state)
+// Enhanced validation with specific error types
+typedef enum
+{
+    VALIDATION_OK = 1,
+    VALIDATION_EMPTY = 2,
+    VALIDATION_NON_NUMERIC = 3,
+    VALIDATION_OUT_OF_RANGE = 4
+} ValidationResult_t;
+
+ValidationResult_t uart_ValidateInputDetailed(uint8_t *str, TimeUpdateState_t state)
 {
     // Kiểm tra chuỗi rỗng
     if (str == NULL || strlen((char *)str) == 0)
     {
-        return 0;
+        return VALIDATION_EMPTY;
     }
 
     // Kiểm tra chỉ chứa số
@@ -169,7 +181,7 @@ uint8_t uart_ValidateInput(uint8_t *str, TimeUpdateState_t state)
     {
         if (str[i] < '0' || str[i] > '9')
         {
-            return 0;
+            return VALIDATION_NON_NUMERIC;
         }
     }
 
@@ -179,13 +191,167 @@ uint8_t uart_ValidateInput(uint8_t *str, TimeUpdateState_t state)
     switch (state)
     {
     case TIME_UPDATE_HOURS:
-        return (num >= 0 && num <= 23);
+        return (num >= 0 && num <= 23) ? VALIDATION_OK : VALIDATION_OUT_OF_RANGE;
     case TIME_UPDATE_MINUTES:
-        return (num >= 0 && num <= 59);
+        return (num >= 0 && num <= 59) ? VALIDATION_OK : VALIDATION_OUT_OF_RANGE;
     case TIME_UPDATE_SECONDS:
-        return (num >= 0 && num <= 59);
+        return (num >= 0 && num <= 59) ? VALIDATION_OK : VALIDATION_OUT_OF_RANGE;
     default:
-        return 0;
+        return VALIDATION_OUT_OF_RANGE;
+    }
+}
+
+// Backward compatibility function
+uint8_t uart_ValidateInput(uint8_t *str, TimeUpdateState_t state)
+{
+    return (uart_ValidateInputDetailed(str, state) == VALIDATION_OK) ? 1 : 0;
+}
+
+// Enhanced validation error handler with specific messages
+void uart_HandleValidationErrorDetailed(uint8_t *input, TimeUpdateState_t state)
+{
+    uart_ClearInputBuffer(); // Clear buffers
+
+    ValidationResult_t result = uart_ValidateInputDetailed(input, state);
+
+    switch (result)
+    {
+    case VALIDATION_EMPTY:
+        uart_Rs232SendString((uint8_t *)"ERROR: Empty input! Please enter a number.\n");
+        break;
+
+    case VALIDATION_NON_NUMERIC:
+        uart_Rs232SendString((uint8_t *)"ERROR: Non-numeric characters detected! Only numbers (0-9) allowed.\n");
+        break;
+
+    case VALIDATION_OUT_OF_RANGE:
+        uart_Rs232SendString((uint8_t *)"ERROR: Number out of range! ");
+        switch (state)
+        {
+        case TIME_UPDATE_HOURS:
+            uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
+            break;
+        case TIME_UPDATE_MINUTES:
+            uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
+            break;
+        case TIME_UPDATE_SECONDS:
+            uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
+            break;
+        default:
+            uart_Rs232SendString((uint8_t *)"Invalid range.\n");
+            break;
+        }
+        break;
+
+    default:
+        uart_Rs232SendString((uint8_t *)"ERROR: Invalid input.\n");
+        break;
+    }
+
+    // Send prompt again
+    switch (state)
+    {
+    case TIME_UPDATE_HOURS:
+        uart_Rs232SendString((uint8_t *)"Hours\n");
+        break;
+    case TIME_UPDATE_MINUTES:
+        uart_Rs232SendString((uint8_t *)"Minutes\n");
+        break;
+    case TIME_UPDATE_SECONDS:
+        uart_Rs232SendString((uint8_t *)"Seconds\n");
+        break;
+    default:
+        break;
+    }
+}
+
+// Backward compatibility function
+void uart_HandleValidationError(TimeUpdateState_t state)
+{
+    uart_ClearInputBuffer();
+    uart_Rs232SendString((uint8_t *)"ERROR: Invalid data! ");
+    switch (state)
+    {
+    case TIME_UPDATE_HOURS:
+        uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
+        uart_Rs232SendString((uint8_t *)"Hours\n");
+        break;
+    case TIME_UPDATE_MINUTES:
+        uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
+        uart_Rs232SendString((uint8_t *)"Minutes\n");
+        break;
+    case TIME_UPDATE_SECONDS:
+        uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
+        uart_Rs232SendString((uint8_t *)"Seconds\n");
+        break;
+    default:
+        uart_Rs232SendString((uint8_t *)"Invalid input.\n");
+        break;
+    }
+}
+
+// Enhanced Exercise 2 validation error handler
+void uart_HandleValidationErrorEx2Detailed(uint8_t *input, TimeUpdateState_t state)
+{
+    uart_ClearInputBuffer();
+
+    ValidationResult_t result = uart_ValidateInputDetailed(input, state);
+
+    switch (result)
+    {
+    case VALIDATION_EMPTY:
+        uart_Rs232SendString((uint8_t *)"ERROR: Empty input! Please enter a number.\n");
+        break;
+
+    case VALIDATION_NON_NUMERIC:
+        uart_Rs232SendString((uint8_t *)"ERROR: Non-numeric characters detected! Only numbers (0-9) allowed.\n");
+        break;
+
+    case VALIDATION_OUT_OF_RANGE:
+        uart_Rs232SendString((uint8_t *)"ERROR: Number out of range! ");
+        switch (state)
+        {
+        case TIME_UPDATE_HOURS:
+            uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
+            break;
+        case TIME_UPDATE_MINUTES:
+            uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
+            break;
+        case TIME_UPDATE_SECONDS:
+            uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
+            break;
+        default:
+            uart_Rs232SendString((uint8_t *)"Invalid range.\n");
+            break;
+        }
+        break;
+
+    default:
+        uart_Rs232SendString((uint8_t *)"ERROR: Invalid input.\n");
+        break;
+    }
+}
+
+// Helper function for Exercise 2 validation error (no repeat prompt)
+void uart_HandleValidationErrorEx2(TimeUpdateState_t state)
+{
+    uart_ClearInputBuffer(); // Clear buffers
+    uart_Rs232SendString((uint8_t *)"ERROR: Invalid data! ");
+
+    switch (state)
+    {
+    case TIME_UPDATE_HOURS:
+        uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
+        break;
+    case TIME_UPDATE_MINUTES:
+        uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
+        break;
+    case TIME_UPDATE_SECONDS:
+        uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
+        break;
+    default:
+        uart_Rs232SendString((uint8_t *)"Invalid input.\n");
+        break;
     }
 }
 
@@ -225,8 +391,11 @@ void uart_StartTimeUpdate(void)
     request_start_time = HAL_GetTick(); // FIX: Thêm timer cho bài 1
     time_update_state = TIME_UPDATE_HOURS;
 
-    // FIX: Clear input buffer để tránh dữ liệu cũ
-    uart_ClearInputBuffer();
+    // Clear all buffers before starting
+    uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
+
+    // DEBUG: Thông báo bắt đầu với buffer clean
+    uart_Rs232SendString((uint8_t *)"DEBUG: Started Bai1 - Buffer cleared\n");
 
     lcd_Clear(BLACK);
     lcd_ShowStr(10, 100, "TIME UPDATE MODE", WHITE, BLACK, 16, 0);
@@ -254,11 +423,11 @@ void uart_StartTimeUpdateEx(void)
     request_start_time = HAL_GetTick();
     time_update_state = TIME_UPDATE_HOURS;
 
-    // FIX: Clear input buffer để tránh dữ liệu cũ
-    uart_ClearInputBuffer();
+    // Clear all buffers before starting
+    uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
 
     // DEBUG: Thông báo đã bắt đầu bài 2
-    uart_Rs232SendString((uint8_t *)"DEBUG: Started Exercise 2 (timeout mode)\n");
+    uart_Rs232SendString((uint8_t *)"DEBUG: Started Exercise 2 - Buffer cleared\n");
 
     lcd_Clear(BLACK);
     lcd_ShowStr(10, 80, "TIME UPDATE MODE", WHITE, BLACK, 16, 0);
@@ -342,13 +511,17 @@ void uart_ProcessTimeUpdate(void)
             }
             lcd_ShowStr(10, 220, error_step, CYAN, BLACK, 12, 0);
 
+            // Clear all buffers before returning to normal mode
+            uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
+
             HAL_Delay(3000); // Tăng thời gian hiển thị để đọc được lỗi
             time_update_state = TIME_UPDATE_IDLE;
             retry_count = 0;
             return;
         }
 
-        // Reset timer và gửi lại request
+        // Clear buffers and reset timer for retry
+        uart_ClearInputBuffer(); // Clear any partial input that might have caused timeout
         request_start_time = HAL_GetTick();
         switch (time_update_state)
         {
@@ -370,33 +543,16 @@ void uart_ProcessTimeUpdate(void)
     if (uart_ReadLine(response_buffer, sizeof(response_buffer)))
     {
         // Debug: Echo chuỗi nhận được trước khi parse
-        uart_Rs232SendString((uint8_t *)"Raw input: [");
-        uart_Rs232SendString(response_buffer);
-        uart_Rs232SendString((uint8_t *)"]\n");
+        char debug_msg[60];
+        sprintf(debug_msg, "Raw input: [%s] (len=%d)\n", response_buffer, (int)strlen((char *)response_buffer));
+        uart_Rs232SendString((uint8_t *)debug_msg);
 
         // Validation dữ liệu (cũng áp dụng cho Bài 1)
         if (!uart_ValidateInput(response_buffer, time_update_state))
         {
             // Dữ liệu không hợp lệ, reset timer và yêu cầu nhập lại
             request_start_time = HAL_GetTick(); // Reset timer khi validation fail
-            uart_Rs232SendString((uint8_t *)"ERROR: Invalid data! ");
-            switch (time_update_state)
-            {
-            case TIME_UPDATE_HOURS:
-                uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
-                uart_Rs232SendString((uint8_t *)"Hours\n");
-                break;
-            case TIME_UPDATE_MINUTES:
-                uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
-                uart_Rs232SendString((uint8_t *)"Minutes\n");
-                break;
-            case TIME_UPDATE_SECONDS:
-                uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
-                uart_Rs232SendString((uint8_t *)"Seconds\n");
-                break;
-            default:
-                break;
-            }
+            uart_HandleValidationErrorDetailed(response_buffer, time_update_state);
             return; // Không xử lý tiếp, chờ input mới
         }
 
@@ -447,6 +603,9 @@ void uart_ProcessTimeUpdate(void)
             lcd_ShowStr(10, 120, "Time update completed!", WHITE, BLACK, 16, 0);
             lcd_ShowStr(10, 140, "                        ", WHITE, BLACK, 14, 0);
             uart_Rs232SendString((uint8_t *)"Time update completed!\n");
+
+            // Clear all buffers after completion
+            uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
 
             // Sau 2 giây sẽ quay về chế độ bình thường
             HAL_Delay(2000);
@@ -512,6 +671,9 @@ void uart_ProcessTimeUpdateEx(void)
             lcd_ShowStr(10, 220, "Returning to normal...", WHITE, BLACK, 12, 0);
             uart_Rs232SendString((uint8_t *)"ERROR: Timeout after 3 retries!\n");
 
+            // Clear all buffers after error
+            uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
+
             // Quay về chế độ bình thường sau 3 giây
             HAL_Delay(3000);
             time_update_state = TIME_UPDATE_IDLE;
@@ -519,7 +681,8 @@ void uart_ProcessTimeUpdateEx(void)
             return;
         }
 
-        // Gửi lại request (FIX: Reset timer đúng cách)
+        // Clear buffers and reset timer for retry
+        uart_ClearInputBuffer(); // Clear any partial input that might have caused timeout
         request_start_time = HAL_GetTick();
         uart_Rs232SendString((uint8_t *)"TIMEOUT: Resending request...\n");
         switch (time_update_state)
@@ -546,33 +709,16 @@ void uart_ProcessTimeUpdateEx(void)
         retry_count = 0;
 
         // Debug: Echo chuỗi nhận được
-        uart_Rs232SendString((uint8_t *)"Raw input: [");
-        uart_Rs232SendString(response_buffer);
-        uart_Rs232SendString((uint8_t *)"]\n");
+        char debug_msg[60];
+        sprintf(debug_msg, "Raw input: [%s] (len=%d)\n", response_buffer, (int)strlen((char *)response_buffer));
+        uart_Rs232SendString((uint8_t *)debug_msg);
 
         // Validation dữ liệu
         if (!uart_ValidateInput(response_buffer, time_update_state))
         {
             // Dữ liệu không hợp lệ, gửi lại request
             lcd_ShowStr(10, 190, "Invalid data! Retry...", RED, BLACK, 12, 0);
-            uart_Rs232SendString((uint8_t *)"ERROR: Invalid data! ");
-
-            // Hiển thị thông báo lỗi chi tiết
-            switch (time_update_state)
-            {
-            case TIME_UPDATE_HOURS:
-                uart_Rs232SendString((uint8_t *)"Hours must be 0-23.\n");
-                break;
-            case TIME_UPDATE_MINUTES:
-                uart_Rs232SendString((uint8_t *)"Minutes must be 0-59.\n");
-                break;
-            case TIME_UPDATE_SECONDS:
-                uart_Rs232SendString((uint8_t *)"Seconds must be 0-59.\n");
-                break;
-            default:
-                uart_Rs232SendString((uint8_t *)"Invalid input.\n");
-                break;
-            }
+            uart_HandleValidationErrorEx2Detailed(response_buffer, time_update_state);
 
             // Reset timer và gửi lại request ngay lập tức
             request_start_time = HAL_GetTick(); // FIX: Reset timer đúng cách
@@ -636,6 +782,9 @@ void uart_ProcessTimeUpdateEx(void)
             lcd_ShowStr(10, 155, "Time update completed!", GREEN, BLACK, 14, 0);
             lcd_ShowStr(10, 170, "                        ", BLACK, BLACK, 12, 0);
             uart_Rs232SendString((uint8_t *)"Time update completed!\n");
+
+            // Clear all buffers after completion
+            uart_ClearInputBuffer(); // This already calls uart_ResetLineBuffer()
 
             // Quay về chế độ bình thường sau 2 giây
             HAL_Delay(2000);

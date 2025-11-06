@@ -37,8 +37,12 @@ uint8_t uart_ParseNumber(uint8_t *str);
 uint8_t uart_ValidateInput(uint8_t *str, TimeUpdateState_t state);
 
 // Utility functions
-void uart_ClearInputBuffer(void); // Clear ring buffer và line buffer
-void uart_ResetLineBuffer(void);  // Reset static line buffer
+void uart_ClearInputBuffer(void);                                                    // Clear ring buffer và line buffer
+void uart_ResetLineBuffer(void);                                                     // Reset static line buffer
+void uart_HandleValidationError(TimeUpdateState_t state);                            // Exercise 1 validation error
+void uart_HandleValidationErrorEx2(TimeUpdateState_t state);                         // Exercise 2 validation error
+void uart_HandleValidationErrorDetailed(uint8_t *input, TimeUpdateState_t state);    // Exercise 1 detailed error
+void uart_HandleValidationErrorEx2Detailed(uint8_t *input, TimeUpdateState_t state); // Exercise 2 detailed error
 
 // ---------------------- Biến toàn cục ----------------------
 extern volatile uint8_t uart_data_ready;
